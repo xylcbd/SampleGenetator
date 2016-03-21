@@ -1,7 +1,8 @@
 #include <iostream>
 #include <string>
-#include <opencv2/opencv.hpp>
 #include <random>
+#include <fstream>
+#include <cstdint>
 #include "SampleGenetator.h"
 
 static std::wstring getChineseTable()
@@ -16,7 +17,91 @@ static unsigned short getRandomValue(const unsigned short minValue, const unsign
 	std::uniform_int_distribution<> dis(minValue,maxValue);
 	return dis(gen);
 }
-int main()
+struct SampleDesc
+{
+	wchar_t txtChar;
+	cv::Mat img;
+};
+static cv::Mat genSample(const wchar_t txtChar)
+{
+	const int srcSize = 86;
+	const int standardSize = 32;
+	const auto font = R"(方正新书宋简体.ttf)";
+	SampleGenetator paiter(font, srcSize);
+	//src
+	const auto srcImg = paiter.genSample(txtChar);
+	//smooth
+	cv::Mat smoothedImg;
+	cv::GaussianBlur(srcImg, smoothedImg, cv::Size(3, 3), 1.0f);
+	//resize
+	cv::Mat standardImg;
+	cv::resize(smoothedImg, standardImg, cv::Size(standardSize, standardSize), 0.0, 0.0, cv::INTER_AREA);
+	return standardImg;
+}
+static void genSamples(const std::wstring& charList, const std::string& sampleFilePath)
+{
+	//gen samples
+	std::vector<SampleDesc> samples;
+	for (const auto& txtChar : charList)
+	{
+		SampleDesc sample;
+		sample.txtChar = txtChar;
+		sample.img = genSample(txtChar);
+		samples.push_back(sample);
+	}
+
+	//dump samples
+	std::ofstream ofs(sampleFilePath,std::ios_base::binary);
+	int32_t sampleCount = samples.size();
+	ofs.write((char*)(&sampleCount), sizeof(sampleCount));
+	for (const auto& sample : samples)
+	{
+		//txt char
+		ofs.write((char*)(&sample.txtChar), sizeof(sample.txtChar));
+		//width,height
+		const int width = sample.img.cols;
+		const int height = sample.img.rows;
+		ofs.write((char*)(&width), sizeof(width));
+		ofs.write((char*)(&height), sizeof(height));
+		for (int y = 0; y < sample.img.rows;y++)
+		{
+			ofs.write((char*)(sample.img.data + y*sample.img.cols),sample.img.cols);
+		}	
+	}
+}
+static std::vector<SampleDesc> parserSampleData(const std::string& sampleFilePath)
+{
+	std::vector<SampleDesc> samples;
+	//load samples
+	std::ifstream ifs(sampleFilePath, std::ios_base::binary);
+	int32_t sampleCount = 0;
+	ifs.read((char*)(&sampleCount), sizeof(sampleCount));
+	for (int32_t i = 0; i < sampleCount;i++)
+	{
+		wchar_t txtChar = L'';
+		ifs.read((char*)(&txtChar), sizeof(txtChar));
+		int width = 0, height = 0;
+		ifs.read((char*)(&width), sizeof(width));
+		ifs.read((char*)(&height), sizeof(height));
+		cv::Mat srcImg(height, width, CV_8UC1);
+		for (int y = 0; y < height; y++)
+		{
+			ifs.read((char*)(srcImg.data + y*srcImg.cols), srcImg.cols);
+		}
+		SampleDesc sample;
+		sample.txtChar = txtChar;
+		sample.img = srcImg;
+		samples.push_back(sample);
+		cv::imshow("srcImg", srcImg);
+		const auto key = cv::waitKey(0);
+		if (key == 27)
+		{
+			break;
+		}
+	}
+	return samples;
+}
+static void example()
 {
 	const int srcSize = 86;
 	const int standardSize = 32;
@@ -25,8 +110,8 @@ int main()
 	const auto chineseTable = getChineseTable();
 	while (true)
 	{
-		const auto txtChar = chineseTable[getRandomValue(0, chineseTable.size())];		
-		const auto srcImg = paiter.genSample(txtChar);		
+		const auto txtChar = chineseTable[getRandomValue(0, chineseTable.size())];
+		const auto srcImg = paiter.genSample(txtChar);
 		cv::Mat smoothedImg;
 		cv::GaussianBlur(srcImg, smoothedImg, cv::Size(3, 3), 1.0f);
 		cv::Mat standardImg;
@@ -40,6 +125,13 @@ int main()
 		{
 			break;
 		}
-	}	
+	}
+}
+int main()
+{
+	//example();
+	const auto sampleFilePath = "samples.data";
+	genSamples(/*getChineseTable()*/L"我是中国人，呵呵哒", sampleFilePath);
+	parserSampleData(sampleFilePath);
 	return 0;
 }
