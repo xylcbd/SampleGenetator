@@ -1,13 +1,13 @@
 #include "SampleGenetator.h"
 
-SampleGenetator::SampleGenetator(const char* fontPath, const int textHeight)
+SampleGenetator::SampleGenetator(const std::string fontPath, const int textHeight)
 {
 	if (FT_Init_FreeType(&library)) 
 	{
 		assert(false);
 		exit(-1);
 	}
-	if (FT_New_Face(library, fontPath, 0, &face))
+	if (FT_New_Face(library, fontPath.c_str(), 0, &face))
 	{
 		assert(false);
 		exit(-1);

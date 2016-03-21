@@ -17,17 +17,20 @@ static unsigned short getRandomValue(const unsigned short minValue, const unsign
 	std::uniform_int_distribution<> dis(minValue,maxValue);
 	return dis(gen);
 }
+struct SampleStyle
+{
+	std::string font;
+	SampleStyle(const std::string& _font) :font(_font){}
+};
 struct SampleDesc
 {
 	wchar_t txtChar;
 	cv::Mat img;
 };
-static cv::Mat genSample(const wchar_t txtChar)
+static cv::Mat genSample(const wchar_t txtChar, const SampleStyle style, const int standardSize)
 {
 	const int srcSize = 86;
-	const int standardSize = 32;
-	const auto font = R"(方正新书宋简体.ttf)";
-	SampleGenetator paiter(font, srcSize);
+	SampleGenetator paiter(style.font, srcSize);
 	//src
 	const auto srcImg = paiter.genSample(txtChar);
 	//smooth
@@ -35,25 +38,36 @@ static cv::Mat genSample(const wchar_t txtChar)
 	cv::GaussianBlur(srcImg, smoothedImg, cv::Size(3, 3), 1.0f);
 	//resize
 	cv::Mat standardImg;
-	cv::resize(smoothedImg, standardImg, cv::Size(standardSize, standardSize), 0.0, 0.0, cv::INTER_AREA);
+	if (!smoothedImg.data)
+	{
+		std::cout << "style : {" << style.font << "}" << std::endl;
+		std::cout << "lost char : txtChar = " << txtChar << ",width=" << smoothedImg.cols << ",height=" << smoothedImg.rows << std::endl;
+		standardImg = smoothedImg.clone();
+	}
+	else
+	{
+		cv::resize(smoothedImg, standardImg, cv::Size(standardSize, standardSize), 0.0, 0.0, cv::INTER_AREA);
+	}
 	return standardImg;
 }
-static void genSamples(const std::wstring& charList, const std::string& sampleFilePath)
+static void genSamples(const std::wstring& charList, const std::string& sampleFilePath,const SampleStyle style)
 {
 	//gen samples
+	const int standardSize = 32;
 	std::vector<SampleDesc> samples;
 	for (const auto& txtChar : charList)
 	{
 		SampleDesc sample;
 		sample.txtChar = txtChar;
-		sample.img = genSample(txtChar);
+		sample.img = genSample(txtChar, style, standardSize);
 		samples.push_back(sample);
 	}
 
 	//dump samples
 	std::ofstream ofs(sampleFilePath,std::ios_base::binary);
-	int32_t sampleCount = samples.size();
+	int sampleCount = samples.size();
 	ofs.write((char*)(&sampleCount), sizeof(sampleCount));
+	ofs.write((char*)(&standardSize), sizeof(standardSize));
 	for (const auto& sample : samples)
 	{
 		//txt char
@@ -74,9 +88,11 @@ static std::vector<SampleDesc> parserSampleData(const std::string& sampleFilePat
 	std::vector<SampleDesc> samples;
 	//load samples
 	std::ifstream ifs(sampleFilePath, std::ios_base::binary);
-	int32_t sampleCount = 0;
+	int sampleCount = 0;
 	ifs.read((char*)(&sampleCount), sizeof(sampleCount));
-	for (int32_t i = 0; i < sampleCount;i++)
+	int standardSize = 0;
+	ifs.read((char*)(&standardSize), sizeof(standardSize));
+	for (int i = 0; i < sampleCount;i++)
 	{
 		wchar_t txtChar = L'';
 		ifs.read((char*)(&txtChar), sizeof(txtChar));
@@ -130,8 +146,15 @@ static void example()
 int main()
 {
 	//example();
-	const auto sampleFilePath = "samples.data";
-	genSamples(/*getChineseTable()*/L"我是中国人，呵呵哒", sampleFilePath);
-	parserSampleData(sampleFilePath);
+	const auto styles = std::vector<SampleStyle>{
+		SampleStyle("微软正黑体.ttf"),
+		SampleStyle("方正新书宋简体.ttf")
+	};
+	for (const auto& style : styles)
+	{
+		const auto sampleFilePath = "samples.data";
+		genSamples(getChineseTable(), sampleFilePath,style);
+		parserSampleData(sampleFilePath);
+	}
 	return 0;
 }
