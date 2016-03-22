@@ -11,7 +11,7 @@ class SampleGenetator
 public:
 	SampleGenetator(const std::string fontPath,const int textHeight);
     ~SampleGenetator();
-	cv::Mat SampleGenetator::genSample(const wchar_t wc);
+	cv::Mat SampleGenetator::genSample(const wchar_t wc, const uchar bgColor, const uchar fgColor);
 private:
     FT_Library library;
     FT_Face face;

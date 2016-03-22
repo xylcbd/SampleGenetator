@@ -20,7 +20,7 @@ SampleGenetator::~SampleGenetator()
     FT_Done_Face(face);
     FT_Done_FreeType(library);
 }
-cv::Mat SampleGenetator::genSample(const wchar_t wc) 
+cv::Mat SampleGenetator::genSample(const wchar_t wc, const uchar bgColor, const uchar fgColor)
 {
 	cv::Mat result;
 
@@ -33,8 +33,6 @@ cv::Mat SampleGenetator::genSample(const wchar_t wc)
     int cols = slot->bitmap.width;
 
 	result = cv::Mat(rows, cols, CV_8UC1);
-	const uchar foreColor = 0;
-	const uchar bgColor = 255;
 	result.setTo(bgColor);
 
     for (int row = 0; row < rows; ++row) 
@@ -44,7 +42,7 @@ cv::Mat SampleGenetator::genSample(const wchar_t wc)
             const int offset = row  * slot->bitmap.pitch + col;
             if (slot->bitmap.buffer[offset]) 
 			{
-				result.at<uchar>(row, col) = foreColor;
+				result.at<uchar>(row, col) = fgColor;
             }
         }
     }
