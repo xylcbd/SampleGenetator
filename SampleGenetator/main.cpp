@@ -15,7 +15,7 @@ static std::wstring getChineseTable()
 	static const std::wstring chineseTable = L"µÄ";
 	return chineseTable;
 }
-static unsigned short getRandomValue(const int minValue, const int maxValue)
+static int getRandomValue(const int minValue, const int maxValue)
 {
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -37,8 +37,8 @@ static cv::Mat addSaltNoise(const cv::Mat& grayImg)
 	cv::Mat resultImg = grayImg.clone();
 	cv::Mat saltPepperNoise = cv::Mat::zeros(resultImg.rows, resultImg.cols, CV_8UC1);
 	cv::randu(saltPepperNoise, 0, 255);
-	const cv::Mat black = saltPepperNoise < 30;
-	const cv::Mat white = saltPepperNoise > 225;
+	const cv::Mat black = saltPepperNoise < 10;
+	const cv::Mat white = saltPepperNoise > 245;
 	resultImg.setTo(255, white);
 	resultImg.setTo(0, black);
 	return resultImg;
@@ -47,7 +47,7 @@ static cv::Mat addGaussianNoise(const cv::Mat& grayImg)
 {
 	cv::Mat resultImg = grayImg.clone();
 	cv::Mat noise = cv::Mat::zeros(resultImg.size(), CV_8UC1);
-	cv::randn(noise, 128, 30);
+	cv::randn(noise, 8, 30);
 	cv::add(resultImg, noise, resultImg);
 	return resultImg;
 }
@@ -59,59 +59,59 @@ static cv::Mat addGaussianSmooth(const cv::Mat& grayImg)
 }
 static cv::Mat horizontalShiftLeft(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(0, 10);
+	const int shiftDist = getRandomValue(1, 3);
 	cv::Mat result = grayImg.clone();
-	for (int y = 0; y < grayImg.rows;y++)
+	for (int y = 0; y < result.rows; y++)
 	{
-		uchar* lineData = grayImg.data + y*grayImg.cols;
-		memcpy(lineData, lineData + shiftDist, grayImg.cols - shiftDist);
-		memset(lineData + (grayImg.cols - shiftDist), bgColor, shiftDist);
+		uchar* lineData = result.data + y*result.cols;
+		memcpy(lineData, lineData + shiftDist, result.cols - shiftDist);
+		memset(lineData + (result.cols - shiftDist), bgColor, shiftDist);
 	}
 	return result;
 }
 static cv::Mat horizontalShiftRight(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(0, 10);
+	const int shiftDist = getRandomValue(1, 3);
 	cv::Mat result = grayImg.clone();
-	for (int y = 0; y < grayImg.rows; y++)
+	for (int y = 0; y < result.rows; y++)
 	{
-		uchar* lineData = grayImg.data + y*grayImg.cols;
-		memcpy(lineData + shiftDist, lineData, grayImg.cols - shiftDist);
+		uchar* lineData = result.data + y*result.cols;
+		memcpy(lineData + shiftDist, lineData, result.cols - shiftDist);
 		memset(lineData, bgColor, shiftDist);
 	}
 	return result;
 }
 static cv::Mat verticalShiftUp(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(0, 10);
+	const int shiftDist = getRandomValue(1, 3);
 	cv::Mat result = grayImg.clone();
-	for (int y = 0; y < grayImg.rows - shiftDist; y++)
+	for (int y = 0; y < result.rows - shiftDist; y++)
 	{
-		const uchar* srcLineData = grayImg.data + (y + shiftDist)*grayImg.cols;
-		uchar* dstLineData = grayImg.data + y*grayImg.cols;
-		memcpy(dstLineData, srcLineData, grayImg.cols);
+		const uchar* srcLineData = result.data + (y + shiftDist)*result.cols;
+		uchar* dstLineData = result.data + y*result.cols;
+		memcpy(dstLineData, srcLineData, result.cols);
 	}
-	for (int y = grayImg.rows-shiftDist; y < grayImg.rows; y++)
+	for (int y = result.rows-shiftDist; y < result.rows; y++)
 	{
-		uchar* dstLineData = grayImg.data + y*grayImg.cols;
-		memset(dstLineData, 0, grayImg.cols);
+		uchar* dstLineData = result.data + y*result.cols;
+		memset(dstLineData, bgColor, result.cols);
 	}
 	return result;
 }
 static cv::Mat verticalShiftDown(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(0, 10);
+	const int shiftDist = getRandomValue(1, 3);
 	cv::Mat result = grayImg.clone();
-	for (int y = shiftDist; y < grayImg.rows; y++)
+	for (int y = result.rows - shiftDist; y >= shiftDist; y--)
 	{
-		const uchar* srcLineData = grayImg.data + (y - shiftDist)*grayImg.cols;
-		uchar* dstLineData = grayImg.data + y*grayImg.cols;
-		memcpy(dstLineData, srcLineData, grayImg.cols);
+		const uchar* srcLineData = result.data + (y - shiftDist)*result.cols;
+		uchar* dstLineData = result.data + y*result.cols;
+		memcpy(dstLineData, srcLineData, result.cols);
 	}
 	for (int y = 0; y < shiftDist; y++)
 	{
-		uchar* dstLineData = grayImg.data + y*grayImg.cols;
-		memset(dstLineData, 0, grayImg.cols);
+		uchar* dstLineData = result.data + y*result.cols;
+		memset(dstLineData, bgColor, result.cols);
 	}
 	return result;
 }
@@ -126,7 +126,8 @@ static cv::Mat addSkew(const cv::Mat& grayImg)
 }
 static cv::Mat perTransform(const cv::Mat& grayImg)
 {
-	cv::Mat result = grayImg.clone();
+	cv::Mat result = cv::Mat(grayImg.size(), CV_8UC1);
+	result.setTo(bgColor);
 	const int imgWidth = result.cols;
 	const int imgHeight = result.rows;	
 	std::vector<cv::Point2f> corners(4);
@@ -136,10 +137,10 @@ static cv::Mat perTransform(const cv::Mat& grayImg)
 	corners[3] = cv::Point2f(imgWidth - 1, imgHeight - 1);
 	//TODO : random it
 	std::vector<cv::Point2f> corners_trans(4);
-	corners_trans[0] = cv::Point2f(15, 25);
-	corners_trans[1] = cv::Point2f(7, 0);
+	corners_trans[0] = cv::Point2f(0, 0);
+	corners_trans[1] = cv::Point2f(imgWidth-1, 0);
 	corners_trans[2] = cv::Point2f(0, imgHeight - 1);
-	corners_trans[3] = cv::Point2f(6, imgHeight - 1);
+	corners_trans[3] = cv::Point2f(imgWidth-1, imgHeight - 1);
 	//action
 	cv::Mat transform = cv::getPerspectiveTransform(corners, corners_trans);
 	std::vector<cv::Point2f> ponits, points_trans;
@@ -154,7 +155,7 @@ static cv::Mat perTransform(const cv::Mat& grayImg)
 	int count = 0;
 	for (int i = 0; i < imgHeight; i++)
 	{
-		uchar* p = result.ptr<uchar>(i);
+		const uchar* p = grayImg.ptr<uchar>(i);
 		for (int j = 0; j < imgWidth; j++)
 		{
 			int y = points_trans[count].y;
@@ -190,11 +191,10 @@ static std::vector<cv::Mat> genSample(const wchar_t txtChar, const SampleStyle s
 	{
 		cv::resize(smoothedImg, standardImg, cv::Size(standardSize, standardSize), 0.0, 0.0, cv::INTER_AREA);
 	}
-	//standard
-	std::vector<cv::Mat> result;
-	result.push_back(standardImg);
 	//process chain
-	std::vector<std::function<cv::Mat(const cv::Mat&)>> procFuncs{
+	//////////////////////////////////////////////////////////////////////////
+	using procFuncType = std::function<cv::Mat(const cv::Mat&)>;
+	std::vector<procFuncType> procFuncs{
 		addSaltNoise,
 		addGaussianNoise,
 		addGaussianSmooth,
@@ -202,13 +202,37 @@ static std::vector<cv::Mat> genSample(const wchar_t txtChar, const SampleStyle s
 		horizontalShiftRight,
 		verticalShiftUp,
 		verticalShiftDown,
-		addSkew,
-		perTransform
+		addSkew
+		//perTransform
 	};
+	//////////////////////////////////////////////////////////////////////////
+	//standard
+	std::vector<cv::Mat> result;
+	result.push_back(standardImg);
+	//////////////////////////////////////////////////////////////////////////
+	//single
 	for (auto& func : procFuncs)
 	{
 		result.push_back(func(standardImg));
+		result.push_back(func(standardImg));
 	}
+	//////////////////////////////////////////////////////////////////////////
+	//random
+	const int samples = getRandomValue(20, 40);
+	for (size_t i = 0; i < samples;i++)
+	{
+		std::vector<procFuncType> procChain(getRandomValue(2, 4));
+		for (size_t j = 0; j < procChain.size();j++)
+		{
+			const int curIdx = getRandomValue(0, procFuncs.size()-1);
+			procChain[j] = procFuncs[curIdx];
+		}
+		for (auto& func : procChain)
+		{
+			result.push_back(func(standardImg));
+		}
+	}
+	std::cout << "samples : " << result.size() << std::endl;
 	return result;
 }
 static void genSamples(const std::wstring& charList, const std::string& sampleFilePath,const SampleStyle style)
@@ -291,7 +315,7 @@ static void example()
 	const auto chineseTable = getChineseTable();
 	while (true)
 	{
-		const auto txtChar = chineseTable[getRandomValue(0, chineseTable.size())];
+		const auto txtChar = chineseTable[getRandomValue(0, chineseTable.size()-1)];
 		const auto srcImg = paiter.genSample(txtChar, bgColor,fgColor);
 		cv::Mat smoothedImg;
 		cv::GaussianBlur(srcImg, smoothedImg, cv::Size(3, 3), 1.0f);
