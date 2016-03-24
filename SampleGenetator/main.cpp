@@ -258,13 +258,15 @@ static inline std::string format_int(int n, int numberOfLeadingZeros = 0) {
 	s << std::setw(numberOfLeadingZeros) << std::setfill('0') << n;
 	return s.str();
 }
-static void genSamples(const std::wstring& charList, const std::string& trainFilePath, const std::string& validateFilePath)
+static void genSamples(const std::wstring& charList, const std::string& trainFilePath, const std::string& validateFilePath,const std::string& reportFilePath)
 {
 	const int standardSize = 32;
 	const auto styles = std::vector<SampleStyle>{
 		SampleStyle("微软正黑体.ttf"),
 		SampleStyle("方正新书宋简体.ttf")
 	};
+
+	std::ofstream ofsReport(reportFilePath);
 
 	// leveldb
 	leveldb::Options options;
@@ -308,6 +310,8 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 	std::cout << "generating samples ..." << std::endl;
 	std::vector<SampleDesc> train_samples;
 	std::vector<SampleDesc> validate_samples;
+	std::map<wchar_t, int> train_statistics;
+	std::map<wchar_t, int> validate_statistics;
 	const int train_single_param = 20;
 	const int train_multi_param = 40;
 	const int validate_single_param = 6;
@@ -322,10 +326,12 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 			{
 				//train
 				const auto trainSampleSet = genSample(txtChar, style, standardSize, train_single_param, train_multi_param);
-				std::copy(trainSampleSet.cbegin(), trainSampleSet.cend(), std::back_inserter(train_samples));
+				std::copy(trainSampleSet.cbegin(), trainSampleSet.cend(), std::back_inserter(train_samples));				
 				//validate
 				const auto validateSampleSet = genSample(txtChar, style, standardSize, validate_single_param, validate_multi_param);
 				std::copy(validateSampleSet.cbegin(), validateSampleSet.cend(), std::back_inserter(validate_samples));
+				train_statistics[txtChar] += trainSampleSet.size();
+				validate_statistics[txtChar] += validateSampleSet.size();
 			}
 		}	
 	}
@@ -345,7 +351,8 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 		std::mutex mtx;
 		for (size_t i = 0; i < threads.size(); i++)
 		{
-			threads[i] = std::thread([&styles, &synFetchCharFunc, &standardSize, &mtx, &train_samples,&validate_samples,&train_single_param, &train_multi_param, &validate_single_param, &validate_multi_param]{
+			threads[i] = std::thread([&styles, &synFetchCharFunc, &standardSize, &mtx, &train_samples, &validate_samples, &train_statistics, &validate_statistics,
+				&train_single_param, &train_multi_param, &validate_single_param, &validate_multi_param]{
 				while (true)
 				{
 					wchar_t txtChar = 0;
@@ -375,6 +382,8 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 						std::lock_guard<std::mutex> locker(mtx);
 						std::copy(trainSampleSet.cbegin(), trainSampleSet.cend(), std::back_inserter(train_samples));
 						std::copy(validateSampleSet.cbegin(), validateSampleSet.cend(), std::back_inserter(validate_samples));
+						train_statistics[txtChar] += trainSampleSet.size();
+						validate_statistics[txtChar] += validateSampleSet.size();
 					}
 				}			
 			});
@@ -387,8 +396,23 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 	std::cout << "generate samples done." << std::endl;
 	std::cout << "train sample set : " << train_samples.size() << std::endl;
 	std::cout << "validate sample set : " << validate_samples.size() << std::endl;
+	ofsReport << "train sample set : " << train_samples.size() << std::endl;
+	ofsReport << "validate sample set : " << validate_samples.size() << std::endl;
+	ofsReport << "---------------------------" << std::endl;
+	ofsReport << "train total char count : " << train_statistics.size() << std::endl;
+	ofsReport << "train details : " << std::endl;
+	for (const auto item : train_statistics)
+	{
+		ofsReport << item.first << "\t" << item.second << std::endl;
+	}
+	ofsReport << "---------------------------" << std::endl;
+	ofsReport << "validate total char count : " << validate_statistics.size() << std::endl;
+	ofsReport << "validate details : " << std::endl;
+	for (const auto item : validate_statistics)
+	{
+		ofsReport << item.first << "\t" << item.second << std::endl;
+	}
 	std::cout << "---------------------------" << std::endl;
-	system("pause");
 	std::cout << "shuffling samples ..." << std::endl;
 	//shuffle
 	const auto randSeed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -469,7 +493,7 @@ int main()
 	//
 	system("del /q train.data");
 	system("del /q test.data");
-	genSamples(getChineseTable(), "train.data","test.data");
+	genSamples(getChineseTable(), "train.data","test.data","report.txt");
 	//parserSampleData("微软正黑体.data");
 	return 0;
 }
