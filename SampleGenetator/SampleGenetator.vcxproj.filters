@@ -21,9 +21,18 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="caffe.pb.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="SampleGenetator.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="caffe.pb.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="scopeExit.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

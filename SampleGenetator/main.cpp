@@ -1,3 +1,4 @@
+//std
 #include <iostream>
 #include <string>
 #include <random>
@@ -6,7 +7,16 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <memory>
+#include <iomanip>
+#include <sstream>
+//3rd
+#include <leveldb/db.h>
+#include <leveldb/write_batch.h>
+//own
+#include "caffe.pb.h"
 #include "SampleGenetator.h"
+#include "scopeExit.h"
 
 static const uchar bgColor = 155;
 static const uchar fgColor = 0;
@@ -31,7 +41,7 @@ struct SampleStyle
 struct SampleDesc
 {
 	wchar_t txtChar;
-	std::vector<cv::Mat> imgSet;
+	cv::Mat image;
 };
 static cv::Mat addSaltNoise(const cv::Mat& grayImg)
 {
@@ -171,9 +181,9 @@ static cv::Mat perTransform(const cv::Mat& grayImg)
 	}
 	return result;
 }
-static std::vector<cv::Mat> genSample(const wchar_t txtChar, const SampleStyle style, const int standardSize)
+static std::vector<SampleDesc> genSample(const wchar_t txtChar, const SampleStyle style, const int standardSize,const int singleParm,const int multiParam)
 {
-	std::vector<cv::Mat> result;
+	std::vector<SampleDesc> result;
 	const int srcSize = 86;
 	SampleGenetator paiter(style.font, srcSize);
 	//src
@@ -209,35 +219,46 @@ static std::vector<cv::Mat> genSample(const wchar_t txtChar, const SampleStyle s
 	};
 	//////////////////////////////////////////////////////////////////////////
 	//standard
-	result.push_back(standardImg);
+	SampleDesc sample;
+	sample.txtChar = txtChar;
+	sample.image = standardImg;
+	result.push_back(sample);
 	//////////////////////////////////////////////////////////////////////////
 	//single
-	for (auto& func : procFuncs)
+	const int singleSample = singleParm;
+	for (int i = 0; i < singleSample; i++)
 	{
-		result.push_back(func(standardImg));
-		result.push_back(func(standardImg));
-		result.push_back(func(standardImg));
-		result.push_back(func(standardImg));
+		for (auto& func : procFuncs)
+		{
+			sample.image = func(standardImg);
+			result.push_back(sample);
+		}
 	}
 	//////////////////////////////////////////////////////////////////////////
 	//random
-	const int samples = 50;
-	for (size_t i = 0; i < samples;i++)
+	const int chainSamples = multiParam;
+	for (int i = 0; i < chainSamples;i++)
 	{
-		std::vector<procFuncType> procChain(3);
-		for (size_t j = 0; j < procChain.size();j++)
+		const int chainLen = 2;
+		auto img = standardImg.clone();
+		for (int j = 0; j < chainLen; j++)
 		{
 			const int curIdx = getRandomValue(0, procFuncs.size()-1);
-			procChain[j] = procFuncs[curIdx];
+			auto& func = procFuncs[curIdx];
+			img = func(img);
 		}
-		for (auto& func : procChain)
-		{
-			result.push_back(func(standardImg));
-		}
+		sample.image = img;
+		result.push_back(sample);
 	}
 	return result;
 }
-static void genSamples(const std::wstring& charList, const std::string& trainFilePath, const std::string& validateFilePath, const std::string& testFilePath)
+//copied from caffe [https://github.com/BVLC/caffe/blob/c7ee2615a8df2dedb408ff9c2c842e5f4f42a310/include/caffe/util/format.hpp]
+static inline std::string format_int(int n, int numberOfLeadingZeros = 0) {
+	std::ostringstream s;
+	s << std::setw(numberOfLeadingZeros) << std::setfill('0') << n;
+	return s.str();
+}
+static void genSamples(const std::wstring& charList, const std::string& trainFilePath, const std::string& validateFilePath)
 {
 	const int standardSize = 32;
 	const auto styles = std::vector<SampleStyle>{
@@ -245,82 +266,68 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 		SampleStyle("方正新书宋简体.ttf")
 	};
 
-	//gen samples
-	//dump samples
-	std::ofstream ofsTrain(trainFilePath, std::ios_base::binary);
-	std::ofstream ofsValidate(validateFilePath, std::ios_base::binary);
-	std::ofstream ofsTest(testFilePath, std::ios_base::binary);
-	//modified again!
-	int charCount = 0;
-	ofsTrain.write((char*)(&charCount), sizeof(charCount));
-	ofsValidate.write((char*)(&charCount), sizeof(charCount));
-	ofsTest.write((char*)(&charCount), sizeof(charCount));
-	//image size
-	ofsTrain.write((char*)(&standardSize), sizeof(standardSize));	
-	ofsValidate.write((char*)(&standardSize), sizeof(standardSize));
-	ofsTest.write((char*)(&standardSize), sizeof(standardSize));
+	// leveldb
+	leveldb::Options options;
+	options.error_if_exists = true;
+	options.create_if_missing = true;
+	options.write_buffer_size = 268435456;
+	leveldb::Status status;
+	//train
+	leveldb::DB* trainDb = nullptr;
+	status = leveldb::DB::Open(
+		options, trainFilePath, &trainDb);
+	if (!status.ok())
+	{
+		std::cerr << "failed to open levelDB , path = " << trainFilePath << std::endl;
+		return;
+	}
+	SCOPEEXIT(delete trainDb;);
+	leveldb::WriteBatch* trainBatch = new leveldb::WriteBatch();
+	SCOPEEXIT(delete trainBatch;);
+	//validate
+	leveldb::DB* validateDb = nullptr;
+	status = leveldb::DB::Open(
+		options, validateFilePath, &validateDb);
+	if (!status.ok())
+	{
+		std::cerr << "failed to open levelDB , path = " << validateFilePath << std::endl;
+		return;
+	}
+	SCOPEEXIT(delete validateDb;);
+	leveldb::WriteBatch* validateBatch = new leveldb::WriteBatch();
+	SCOPEEXIT(delete validateBatch;);
 	//
-	std::cout << "---------------------------" << std::endl;
-	std::cout << "writing samples ..." << std::endl;	
-	//////////////////////////////////////////////////////////////////////////
-	auto synSaveResultFunc = [&ofsTrain, &ofsValidate, &ofsTest, &charCount, &charList](const SampleDesc& sample){
-		//////////////////////////////////////////////////////////////////////////
-		//syn
-		//txt char
-		ofsTrain.write((char*)(&sample.txtChar), sizeof(sample.txtChar));
-		ofsValidate.write((char*)(&sample.txtChar), sizeof(sample.txtChar));
-		ofsTest.write((char*)(&sample.txtChar), sizeof(sample.txtChar));
-		//idx
-		ofsTrain.write((char*)(&charCount), sizeof(charCount));
-		ofsValidate.write((char*)(&charCount), sizeof(charCount));
-		ofsTest.write((char*)(&charCount), sizeof(charCount));
-		//count
-		auto dumpData = [&sample](std::ofstream& ofs,const int curStartPos, const int curSampleCount){
-			ofs.write((char*)(&curSampleCount), sizeof(curSampleCount));
-			//details
-			for (size_t i = curStartPos; i < curStartPos + curSampleCount; i++)
-			{
-				const auto& img(sample.imgSet[i]);
-				for (int y = 0; y < img.rows; y++)
-				{
-					ofs.write((char*)(img.data + y*img.cols), img.cols);
-				}
-			}
-		};
-		//85 : 5 : 10
-		//train
-		const int curTrainStartPos = 0;
-		const int curTrainSampleCount = (int)(0.85f*sample.imgSet.size());
-		dumpData(ofsTrain, curTrainStartPos, curTrainSampleCount);
-		//validate
-		const int curValidateStartPos = curTrainStartPos + curTrainSampleCount;
-		const int curValidateSampleCount = (int)(0.05f*sample.imgSet.size());
-		dumpData(ofsValidate, curValidateStartPos, curValidateSampleCount);
-		//tests
-		const int curTestStartPos = curValidateStartPos + curValidateSampleCount;
-		const int curTestSampleCount = sample.imgSet.size() - curTestStartPos;
-		dumpData(ofsTest, curTestStartPos, curTestSampleCount);
-		//////////////////////////////////////////////////////////////////////////
-		charCount++;
-		//////////////////////////////////////////////////////////////////////////
-		std::cout << "progress : " << charCount << "/" << charList.size() << std::endl;
-		std::cout << "[" << sample.txtChar << "] write samples : " << sample.imgSet.size() << std::endl;
-	};
+	const int batchSize = 3000;
+	int trainSampleIdx = 0;
+	int validateSampleIdx = 0;
+	SCOPEEXIT(if(trainSampleIdx % batchSize != 0){trainDb->Write(leveldb::WriteOptions(), trainBatch);});
+	SCOPEEXIT(if (validateSampleIdx % batchSize != 0){ validateDb->Write(leveldb::WriteOptions(), validateBatch); });
 
-	if (charList.size() < 0)
+	//////////////////////////////////////////////////////////////////////////
+	std::cout << "---------------------------" << std::endl;
+	std::cout << "generating samples ..." << std::endl;
+	std::vector<SampleDesc> train_samples;
+	std::vector<SampleDesc> validate_samples;
+	const int train_single_param = 20;
+	const int train_multi_param = 40;
+	const int validate_single_param = 6;
+	const int validate_multi_param = 15;
+	//gen samples
+	if (charList.size() < 10)
 	{
 		for (const auto& txtChar : charList)
 		{
 			//asyn
-			SampleDesc sample;
-			sample.txtChar = txtChar;
 			for (const auto& style : styles)
 			{
-				const auto imgSet = genSample(txtChar, style, standardSize);
-				std::copy(imgSet.cbegin(), imgSet.cend(), std::back_inserter(sample.imgSet));
+				//train
+				const auto trainSampleSet = genSample(txtChar, style, standardSize, train_single_param, train_multi_param);
+				std::copy(trainSampleSet.cbegin(), trainSampleSet.cend(), std::back_inserter(train_samples));
+				//validate
+				const auto validateSampleSet = genSample(txtChar, style, standardSize, validate_single_param, validate_multi_param);
+				std::copy(validateSampleSet.cbegin(), validateSampleSet.cend(), std::back_inserter(validate_samples));
 			}
-			synSaveResultFunc(sample);
-		}
+		}	
 	}
 	else
 	{
@@ -338,7 +345,7 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 		std::mutex mtx;
 		for (size_t i = 0; i < threads.size(); i++)
 		{
-			threads[i] = std::thread([&styles, &synFetchCharFunc, &synSaveResultFunc, &standardSize, &mtx]{
+			threads[i] = std::thread([&styles, &synFetchCharFunc, &standardSize, &mtx, &train_samples,&validate_samples,&train_single_param, &train_multi_param, &validate_single_param, &validate_multi_param]{
 				while (true)
 				{
 					wchar_t txtChar = 0;
@@ -351,20 +358,23 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 							break;
 						}
 					}					
-					SampleDesc sample;
+					std::vector<SampleDesc> trainSampleSet;
+					std::vector<SampleDesc> validateSampleSet;
 					//asyn block
-					{						
-						sample.txtChar = txtChar;
+					{
 						for (const auto& style : styles)
 						{
-							const auto imgSet = genSample(txtChar, style, standardSize);
-							std::copy(imgSet.cbegin(), imgSet.cend(), std::back_inserter(sample.imgSet));
+							//train
+							trainSampleSet = genSample(txtChar, style, standardSize, train_single_param, train_multi_param);
+							//validate
+							validateSampleSet = genSample(txtChar, style, standardSize, validate_single_param, validate_multi_param);
 						}						
 					}
 					//syn block
 					{
 						std::lock_guard<std::mutex> locker(mtx);
-						synSaveResultFunc(sample);
+						std::copy(trainSampleSet.cbegin(), trainSampleSet.cend(), std::back_inserter(train_samples));
+						std::copy(validateSampleSet.cbegin(), validateSampleSet.cend(), std::back_inserter(validate_samples));
 					}
 				}			
 			});
@@ -374,63 +384,57 @@ static void genSamples(const std::wstring& charList, const std::string& trainFil
 			threads[i].join();
 		}
 	}
-	//update samples count
-	ofsTrain.seekp(std::ios::beg);
-	ofsTrain.write((char*)(&charCount), sizeof(charCount));
-	ofsValidate.seekp(std::ios::beg);
-	ofsValidate.write((char*)(&charCount), sizeof(charCount));
-	ofsTest.seekp(std::ios::beg);
-	ofsTest.write((char*)(&charCount), sizeof(charCount));
-
-	std::cout << "total char count : " << charCount << std::endl;
-	std::cout << "write done!" << std::endl;
-	std::cout << "---------------------------\n\n"<< std::endl;
-}
-static void parserSampleData(const std::string& sampleFilePath)
-{
-	//load samples
-	std::ifstream ifs(sampleFilePath, std::ios_base::binary);
-	//char count
-	int charCount = 0;
-	ifs.read((char*)(&charCount), sizeof(charCount));
-	//image size
-	int standardSize = 0;
-	ifs.read((char*)(&standardSize), sizeof(standardSize));
+	std::cout << "generate samples done." << std::endl;
+	std::cout << "train sample set : " << train_samples.size() << std::endl;
+	std::cout << "validate sample set : " << validate_samples.size() << std::endl;
 	std::cout << "---------------------------" << std::endl;
-	std::cout << "reading samples ..." << std::endl;	
-	for (int i = 0; i < charCount;i++)
-	{
-		//char text
-		wchar_t txtChar = L'';
-		ifs.read((char*)(&txtChar), sizeof(txtChar));
-		//idx
-		int idx = 0;
-		ifs.read((char*)(&idx), sizeof(idx));
-		//count
-		int curSampleCount = 0;
-		ifs.read((char*)(&curSampleCount), sizeof(curSampleCount));
+	system("pause");
+	std::cout << "shuffling samples ..." << std::endl;
+	//shuffle
+	const auto randSeed = std::chrono::system_clock::now().time_since_epoch().count();
+	std::shuffle(train_samples.begin(), train_samples.end(), std::default_random_engine(randSeed));
+	std::shuffle(validate_samples.begin(), validate_samples.end(), std::default_random_engine(randSeed));
+	std::cout << "shuffle samples done." << std::endl;
+	std::cout << "---------------------------" << std::endl;
+	std::cout << "writing samples ..." << std::endl;
+	//dump
+	//commmon
+	//dump func
+	auto dumpData = [&standardSize, &batchSize](const SampleDesc& sample, leveldb::DB*& db, leveldb::WriteBatch*& batch, const int total, int& curSampleIdx){
 		//details
-		std::vector<cv::Mat> imgs;
-		for (int j = 0; j < curSampleCount; j++)
-		{			
-			cv::Mat srcImg(standardSize, standardSize, CV_8UC1);
-			ifs.read((char*)(srcImg.data), srcImg.rows*srcImg.cols);
-			imgs.push_back(srcImg);
-			/*
-			cv::imshow("srcImg", srcImg);
-			const auto key = cv::waitKey(0);
-			if (key == 27)
-			{
-				exit(0);
-			}
-			*/
-		}
-		//////////////////////////////////////////////////////////////////////////
-		std::cout << "progress : " << charCount << "/" << charCount << std::endl;
-		std::cout << "[" << txtChar << "] read samples : " << curSampleCount << std::endl;
+		const auto& img(sample.image);
+		std::string key_str = format_int(curSampleIdx, 8);
+		std::string value;
+		caffe::Datum datum;
+		datum.set_channels(1);
+		datum.set_height(standardSize);
+		datum.set_width(standardSize);
+		datum.set_label(sample.txtChar);
+		datum.set_data(img.data, img.rows*img.cols);
+		datum.SerializeToString(&value);
+		batch->Put(key_str, value);
+		//batch write
+		curSampleIdx++;
+		if (curSampleIdx % batchSize == 0)
+		{
+			db->Write(leveldb::WriteOptions(), batch);
+			delete batch;
+			batch = new leveldb::WriteBatch();
+			std::cout << "current text : " << sample.txtChar << std::endl;
+			std::cout << "progress : " << curSampleIdx << "/" << total << std::endl;			
+		}		
+	};
+	//train set
+	for (const auto& sample : train_samples)
+	{
+		dumpData(sample, trainDb, trainBatch, train_samples.size(), trainSampleIdx);
 	}
-	std::cout << "total char count : " << charCount << std::endl;
-	std::cout << "read done!" << std::endl;
+	//validate set
+	for (const auto& sample : validate_samples)
+	{
+		dumpData(sample, validateDb, validateBatch, validate_samples.size(), validateSampleIdx);
+	}
+	std::cout << "write done!" << std::endl;
 	std::cout << "---------------------------\n\n"<< std::endl;
 }
 static void example()
@@ -463,8 +467,9 @@ int main()
 {
 	//example();
 	//
-	system("del *.data");
-	genSamples(getChineseTable(), "train.data","validate.data", "test.data");
+	system("del /q train.data");
+	system("del /q test.data");
+	genSamples(getChineseTable(), "train.data","test.data");
 	//parserSampleData("微软正黑体.data");
 	return 0;
 }
