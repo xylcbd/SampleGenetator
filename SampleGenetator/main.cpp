@@ -18,8 +18,8 @@
 #include "SampleGenetator.h"
 #include "scopeExit.h"
 
-static const uchar bgColor = 155;
-static const uchar fgColor = 0;
+static const uchar bgColor = 0;
+static const uchar fgColor = 255;
 
 //label:0-?
 //content:xxx
@@ -77,7 +77,7 @@ static cv::Mat addGaussianSmooth(const cv::Mat& grayImg)
 }
 static cv::Mat horizontalShiftLeft(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(1, 3);
+	const int shiftDist = getRandomValue(1, 2);
 	cv::Mat result = grayImg.clone();
 	for (int y = 0; y < result.rows; y++)
 	{
@@ -89,7 +89,7 @@ static cv::Mat horizontalShiftLeft(const cv::Mat& grayImg)
 }
 static cv::Mat horizontalShiftRight(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(1, 3);
+	const int shiftDist = getRandomValue(1, 2);
 	cv::Mat result = grayImg.clone();
 	for (int y = 0; y < result.rows; y++)
 	{
@@ -101,7 +101,7 @@ static cv::Mat horizontalShiftRight(const cv::Mat& grayImg)
 }
 static cv::Mat verticalShiftUp(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(1, 3);
+	const int shiftDist = getRandomValue(1, 2);
 	cv::Mat result = grayImg.clone();
 	for (int y = 0; y < result.rows - shiftDist; y++)
 	{
@@ -118,7 +118,7 @@ static cv::Mat verticalShiftUp(const cv::Mat& grayImg)
 }
 static cv::Mat verticalShiftDown(const cv::Mat& grayImg)
 {
-	const int shiftDist = getRandomValue(1, 3);
+	const int shiftDist = getRandomValue(1, 2);
 	cv::Mat result = grayImg.clone();
 	for (int y = result.rows - shiftDist; y >= shiftDist; y--)
 	{
@@ -136,7 +136,7 @@ static cv::Mat verticalShiftDown(const cv::Mat& grayImg)
 static cv::Mat addSkew(const cv::Mat& grayImg)
 {
 	cv::Mat result = grayImg.clone();
-	const int degree = getRandomValue(-20, 20);
+	const int degree = getRandomValue(-3, 3);
 	const cv::Point center(result.cols / 2, result.rows / 2);
 	const cv::Mat rotMatS = cv::getRotationMatrix2D(center, degree, 1.0);
 	warpAffine(result, result, rotMatS, result.size(), 1, 0, bgColor);
@@ -214,9 +214,9 @@ static std::vector<SampleDesc> genSample(const std::pair<int, wchar_t>& txtChar,
 	//////////////////////////////////////////////////////////////////////////
 	using procFuncType = std::function<cv::Mat(const cv::Mat&)>;
 	std::vector<procFuncType> procFuncs{
-		addSaltNoise,
-		addGaussianNoise,
-		addGaussianSmooth,
+//		addSaltNoise,
+// 		addGaussianNoise,
+// 		addGaussianSmooth,
 		horizontalShiftLeft,
 		horizontalShiftRight,
 		verticalShiftUp,
@@ -270,7 +270,7 @@ static void genSamples(std::map<int, wchar_t>& charList, const std::string& trai
 	const int standardSize = 32;
 	const auto styles = std::vector<SampleStyle>{
 		SampleStyle("微软正黑体.ttf"),
-		SampleStyle("方正新书宋简体.ttf")
+		//SampleStyle("方正新书宋简体.ttf")
 	};
 
 	std::ofstream ofsReport(reportFilePath);
@@ -319,9 +319,9 @@ static void genSamples(std::map<int, wchar_t>& charList, const std::string& trai
 	std::vector<SampleDesc> validate_samples;
 	std::map<std::pair<int,wchar_t>, int> train_statistics;
 	std::map<std::pair<int, wchar_t>, int> validate_statistics;
-	const int train_single_param = 20;
-	const int train_multi_param = 40;
-	const int validate_single_param = 6;
+	const int train_single_param = 30;
+	const int train_multi_param = 50;
+	const int validate_single_param = 10;
 	const int validate_multi_param = 15;
 	//gen samples
 	if (charList.size() < 10)
@@ -495,14 +495,22 @@ static void example()
 		}
 	}
 }
+static void genLabelSet(std::map<int, wchar_t>& charList, const std::string& labelFilePath)
+{
+	std::ofstream ofs(labelFilePath);
+	for (int i = 0; i < charList.size();i++)
+	{
+		ofs << charList[i] << "\n";
+	}
+}
 int main()
 {
 	//example();
-	//
-	system("del /q train.data");
-	system("del /q test.data");
-	auto chineseTable = getChineseTable();
-	genSamples(chineseTable, "train.data", "test.data", "report.txt");
-	//parserSampleData("微软正黑体.data");
+// 	system("del /q train.data");
+// 	system("del /q test.data");
+ 	auto chineseTable = getChineseTable();
+ 	genSamples(chineseTable, "train.data", "test.data", "report.txt");
+//	parserSampleData("微软正黑体.data");
+	genLabelSet(chineseTable, "label.set");	
 	return 0;
 }

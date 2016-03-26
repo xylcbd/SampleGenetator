@@ -183,4 +183,14 @@ FakesAssemblies/
 
 *.apk
 *.so
+*.idc
 /SampleGenetator/*.data
+packages/
+Debug/
+Release/
+x64/
+/SampleGenetator/label.set
+/SampleGenetator/label.set
+/SampleGenetator/caffe.pb.cc
+/SampleGenetator/caffe.pb.h
+/SampleGenetator/report.txt
